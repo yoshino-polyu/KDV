@@ -1,0 +1,1 @@
+build/bin/kde_cuda 1 pntsRedwood.csv maskSim160000.asc 0 1 0 redwood_SEQ.asc redwood_GPU.asc > redwood_LOG_normal_$(date +'%m-%d-%H:%M').log

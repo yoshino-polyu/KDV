@@ -168,7 +168,7 @@ int main(int argc, char *argv[]){
 	char* pntFn = "data/Points.csv";  // default points file
 	char* maskFn = "data/Mask.asc";   // default mask file
 	bool fromFiles = true;          // by default, read Points and Mask from files
-
+	char* path_to_data = "data/";
 	int SKIPSEQ = 0;                // by default, do not skip sequential execution
 	int SKIPPARA = 0;               // by default, do not skip parallel execution
 
@@ -226,8 +226,22 @@ int main(int argc, char *argv[]){
 	srand(100); // If not read from files, generate random points
 
 	if (fromFiles){
+		size_t length_data_path = strlen(path_to_data);
+		size_t length_pntFn = strlen(pntFn) + length_data_path;
+		size_t length_maskFn = strlen(maskFn) + length_data_path;
+		char* new_pntFn = new char[length_pntFn];
+		strcpy(new_pntFn, path_to_data);
+		strcat(new_pntFn, pntFn);
+		char* new_maskFn = new char[length_maskFn];
+		strcpy(new_maskFn, path_to_data);
+		strcat(new_maskFn, maskFn);
+		pntFn = new_pntFn;
+		maskFn = new_maskFn;
+		printf("pntFn = %s\nmaskFn = %s\n", pntFn, maskFn);
 		Points = ReadSamplePoints(pntFn);
 		Mask = ReadAsciiRaster(maskFn);
+		delete[] new_pntFn;
+		delete[] new_maskFn;
 	}
 	else{
 		Points = AllocateSamplePoints(NPNTS);

@@ -30,3 +30,6 @@ BANDWIDTH_OPTION: 0 - rule of thumb; 1 - cross validation (fixed); 2 - adaptive
 
 e.g.,
 ./kde_cuda_kdtr 1 pntsRedwood.csv redwood.asc 0 1 0 redwood_SEQ.asc redwood_GPU.asc >> redwood_LOG.log
+
+
+./kde_cuda_kdtr 1 pntsRedwood.csv maskSim160000.asc 0 1 0 redwood_SEQ.asc redwood_GPU.asc >> redwood_LOG.log

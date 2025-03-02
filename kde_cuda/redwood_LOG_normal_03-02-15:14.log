@@ -1,0 +1,13 @@
+pntFn = data/pntsRedwood.csv
+maskFn = data/maskSim160000.asc
+number of points: 62
+cell size: 0.002500
+number of cells: 160000
+skip executing SEQUENTIAL program? 1
+skip executing PARALLEL program? 0
+number of threads per block: 256
+rule of thumb bandwidth h0: 0.12315
+Computation on GPU took 47.585 ms (EXCLUSIVE)
+Computation on GPU took 49.631 ms (INCLUSIVE)
+Done...
+

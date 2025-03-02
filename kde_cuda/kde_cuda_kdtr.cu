@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <iostream>
 #include <math.h>
 
 #include <cuda_runtime_api.h>
@@ -176,7 +177,7 @@ void BuildGPUKDtree ();
 */
 KDtree tree; // pointer to the kd tree, can be accessed in any function
 CUDA_KDTree GPU_tree; //pointer to the GPU kd tree, can be accessed in any function
-vector <Point> data; // pointer to the vector to hold data points in kd tree, initilized when building kd tree
+vector <Point> kdTreeData; // pointer to the vector to hold data points in kd tree, initilized when building kd tree
 float *gpuDen; // this is a global array allocated on gpu to store density values. Used in DensityAtPointsKdtr
 //int* gpu_ret_indexes;
 //float* gpu_ret_dists;
@@ -191,7 +192,7 @@ int main(int argc, char *argv[]){
 	char* pntFn = "data/Points.csv";  // default points file
 	char* maskFn = "data/Mask.asc";   // default mask file
 	bool fromFiles = true;          // by default, read Points and Mask from files
-
+	char* path_to_data = "data/";
 	int SKIPSEQ = 0;                // by default, do not skip sequential execution
 	int SKIPPARA = 0;               // by default, do not skip parallel execution
 
@@ -236,7 +237,6 @@ int main(int argc, char *argv[]){
 			printf("Run in mode 1:\n ./kde_cuda 1 points_file mask_file h_option skip_sequential skip_parallel denfn_seq, denfn_cuda\n");
 	        return 1;
 		}
-
 	}
 
 	SamplePoints Points; // sample of point events
@@ -249,10 +249,24 @@ int main(int argc, char *argv[]){
 	srand(100); // If not read from files, generate random points
 
 	if (fromFiles){
+		size_t length_data_path = strlen(path_to_data);
+		size_t length_pntFn = strlen(pntFn) + length_data_path;
+		size_t length_maskFn = strlen(maskFn) + length_data_path;
+		char* new_pntFn = new char[length_pntFn];
+		strcpy(new_pntFn, path_to_data);
+		strcat(new_pntFn, pntFn);
+		char* new_maskFn = new char[length_maskFn];
+		strcpy(new_maskFn, path_to_data);
+		strcat(new_maskFn, maskFn);
+		pntFn = new_pntFn;
+		maskFn = new_maskFn;
+		printf("pntFn = %s\nmaskFn = %s\n", pntFn, maskFn);
 		Points = ReadSamplePoints(pntFn);
 		Mask = ReadAsciiRaster(maskFn);
+		delete[] new_pntFn;
+		delete[] new_maskFn;
 	}
-	else{
+	else {
 		Points = AllocateSamplePoints(NPNTS);
 		Mask = AllocateAsciiRaster(int(100/CELLSIZE), int(100/CELLSIZE), 0.0f, 0.0f, CELLSIZE, -9999.0f);
 	}
@@ -917,7 +931,7 @@ SamplePoints AllocateSamplePoints(int n){
 }
 
 // points read from a .csv file
-SamplePoints ReadSamplePoints(const char *csvFile){
+SamplePoints ReadSamplePoints(const char *csvFile) {
 	FILE *f = fopen(csvFile, "rt");
 	if (f == NULL)
 	{
@@ -2382,15 +2396,15 @@ void SortSamplePoints(SamplePoints Points){
 // By Guiming @ 2016-09-07
 void BuildCPUKDtree (SamplePoints Points){
 	int NPTS = Points.numberOfPoints;
-	data = vector<Point>(NPTS);
+	kdTreeData = vector<Point>(NPTS);
 	for(int i = 0; i < NPTS; i++){
-		data[i].coords[0] = Points.xCoordinates[i];
-    data[i].coords[1] = Points.yCoordinates[i];
+		kdTreeData[i].coords[0] = Points.xCoordinates[i];
+    kdTreeData[i].coords[1] = Points.yCoordinates[i];
 	}
-	int max_level = (int)(log(data.size())/log(2) / 2) + 1;
-	tree.Create(data, max_level);
+	int max_level = (int)(log(kdTreeData.size())/log(2) / 2) + 1;
+	tree.Create(kdTreeData, max_level);
 }
 
 void BuildGPUKDtree (){
-		GPU_tree.CreateKDTree(tree.GetRoot(), tree.GetNumNodes(), data);
+		GPU_tree.CreateKDTree(tree.GetRoot(), tree.GetNumNodes(), kdTreeData);
 }
