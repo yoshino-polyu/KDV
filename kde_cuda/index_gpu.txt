@@ -1,0 +1,87 @@
+//
+// Created by zhaoyang on 11/8/24.
+//
+
+#include "core/index_gpu.cuh"
+#include "cuda_runtime.h"
+#include <vector>
+#include <iostream>
+#include <stdio.h>
+
+#include "cuvs/neighbors/brute_force.hpp"
+#include <cuvs/distance/distance.hpp>
+#include <raft/core/device_mdarray.hpp>
+#include <raft/core/device_resources.hpp>
+#include <raft/core/host_mdarray.hpp>
+#include <raft/core/copy.hpp>
+#include <raft/neighbors/brute_force.cuh> // using raft
+
+#define CHKERR(call)                                          \
+  do {                                                        \
+    cudaError_t err = call;                                   \
+    if (err != cudaSuccess) {                                 \
+      printf("CUDA error at %s %d: %s\n", __FILE__, __LINE__, \
+             cudaGetErrorString(err));                        \
+      exit(EXIT_FAILURE);                                     \
+    }                                                         \
+  } while (0)
+
+void GPUComputeLearnBaseKNN(const float *base_data, const float *query_data, size_t k,
+                                         size_t npoints, size_t nqueries, size_t dim,
+                            std::vector<std::vector<uint32_t>> &res_id) {
+    raft::device_resources dev_resources;
+    int64_t n_vectors = (int64_t) npoints;
+    int64_t n_dim     = (int64_t) dim;
+    int64_t n_queries = (int64_t) nqueries;
+    auto dataset      = raft::make_device_matrix<float, int64_t>(dev_resources, n_vectors, n_dim);
+    auto queries      = raft::make_device_matrix<float, int64_t>(dev_resources, n_queries, n_dim);
+    auto host_dataset = raft::make_host_matrix_view<const float, int64_t>(base_data, n_vectors, n_dim);
+    auto host_queries = raft::make_host_matrix_view<const float, int64_t>(query_data, n_queries, n_dim);
+
+    raft::copy(dev_resources, dataset.view(), host_dataset);
+    raft::copy(dev_resources, queries.view(), host_queries);
+
+    // printf("Start!\n");
+    // Build:
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto bfknn_index = cuvs::neighbors::brute_force::build(dev_resources,
+                                                           raft::make_const_mdspan(dataset.view()),
+                                                           cuvs::distance::DistanceType::InnerProduct);
+    const int64_t K = (int64_t) k;
+
+    // Search:
+
+    auto search = raft::make_const_mdspan(queries.view());
+    auto reference_indices = raft::make_device_matrix<int64_t, int64_t>(dev_resources, search.extent(0), K);
+    auto reference_distances = raft::make_device_matrix<float, int64_t>(dev_resources, search.extent(0), K);
+
+    cuvs::neighbors::brute_force::search(dev_resources,
+                                         bfknn_index,
+                                         search,
+                                         reference_indices.view(),
+                                         reference_distances.view());
+//    dev_resources.get_stream().synchronize();
+//    dev_resources.sync_stream();
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ti = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
+
+    // std::cout << "KNN Kernel: " << ti.count() << std::endl;
+
+//        printf("End!\n");
+
+    auto host_indices = raft::make_host_matrix<int64_t>(dev_resources, n_queries, K);
+//        auto host_distances = raft::make_host_matrix<float>(dev_resources, n_queries, K);
+//        auto t5 = std::chrono::high_resolution_clock::now();
+    raft::copy(dev_resources, host_indices.view(), reference_indices.view());
+//        raft::copy(dev_resources, host_distances.view(), reference_distances.view());
+//        auto t4 = std::chrono::high_resolution_clock::now();
+//        auto tk = std::chrono::duration_cast<std::chrono::duration<double>>(t4 - t5);
+//        std::cout << "KNN COPY " << tk.count() << std::endl;
+
+    res_id.clear();
+    res_id.resize(n_queries, std::vector<uint32_t>(k));
+    for (int i = 0; i < n_queries; i++) {
+        std::copy(host_indices.data_handle() + i * k, host_indices.data_handle() + (i + 1) * k, res_id[i].begin());
+    }
+}

@@ -781,6 +781,20 @@ int main(int argc, char *argv[]){
 	    dim3 dimGrid_K(GRID_SIZE_K, GRID_SIZE_K);
 		KernelDesityEstimation<<<dimGrid_K, BLOCK_SIZE>>>(dHs, dPoints, dAscii, dWeights);
 
+		// int numPoints = dPoints.numberOfPoints;
+		// int threadsPerBlock = BLOCK_SIZE;
+		// int numBlocks = (numPoints + threadsPerBlock - 1) / threadsPerBlock;
+		
+		// KernelDensityEstimationKdTree<<<numBlocks, threadsPerBlock>>>(
+		// 		GPU_tree.m_gpu_nodes,       // kd-tree 节点数组（GPU 已构造）
+		// 		GPU_tree.m_gpu_indexes,     // kd-tree 节点索引数组
+		// 		GPU_tree.m_gpu_points,      // kd-tree 存储的样本点数组
+		// 		h * h,                      // 固定带宽 h 的平方
+		// 		dPoints,                    // 所有 sample point（在 GPU 上）
+		// 		dWeights,                   // 每个点的边缘校正权值（GPU 上）
+		// 		gpuDen                      // 将累加得到的 density 值存入此数组（GPU 上）
+		// );
+		
 		///////////////////////// STOP GPU EXCLUSIVE TIMING /////////////////////////////
 	    // Record the stop event
 	    error = cudaEventRecord(stopExc, NULL);

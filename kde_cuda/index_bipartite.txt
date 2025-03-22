@@ -1,0 +1,235 @@
+void IndexBipartite::LinkProjection(const Parameters &parameters) {
+    uint32_t M_pjbp = parameters.Get<uint32_t>("M_pjbp");
+    uint32_t L_pjpq = parameters.Get<uint32_t>("L_pjpq");
+    uint32_t Nq = parameters.Get<uint32_t>("M_sq");
+
+    omp_set_num_threads(parameters.Get<uint32_t>("num_threads"));
+    std::vector<uint32_t> vis_order;
+    std::vector<uint32_t> vis_order_sq;
+    for (uint32_t i = 0; i < u32_nd_; ++i) {
+        vis_order.push_back(i);
+    }
+    for (uint32_t i = 0; i < u32_nd_sq_; ++i) {
+        vis_order_sq.push_back(i);
+    }
+    std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+
+#pragma omp parallel for schedule(static, 100)
+    for (uint32_t it_sq = 0; it_sq < u32_nd_sq_; ++it_sq) {
+        uint32_t sq = vis_order_sq[it_sq];
+
+        auto &nn_base = learn_base_knn_[sq];
+        if (nn_base.size() > Nq) {
+            nn_base.resize(Nq);
+            nn_base.shrink_to_fit();
+        }
+        uint32_t choose_tgt = 0;
+        // for (size_t i = 0; i < 100; ++i) {
+        //     if (projection_graph_[nn_base[i]].size() < M_pjbp) {
+        //         choose_tgt = nn_base[i];
+        //         break;
+        //     }
+        // }
+        uint32_t cur_tgt = nn_base[choose_tgt];
+        std::vector<Neighbor> full_retset;
+        for (size_t i = 0; i < nn_base.size(); ++i) {
+            if (nn_base[i] == cur_tgt) {
+                continue;
+            }
+            float distance = distance_->compare(data_bp_ + dimension_ * (uint64_t)nn_base[i], data_bp_ + dimension_ * (uint64_t)cur_tgt,
+                                                (unsigned)dimension_);
+            full_retset.push_back(Neighbor(nn_base[i], distance, false));
+        }
+        std::vector<uint32_t> pruned_list;
+        pruned_list.reserve(M_pjbp * PROJECTION_SLACK);
+        PruneBiSearchBaseGetBase(full_retset, data_bp_ + dimension_ * cur_tgt, cur_tgt, parameters, pruned_list);
+        {
+            LockGuard guard(locks_[cur_tgt]);
+            projection_graph_[cur_tgt] = pruned_list;
+        }
+        ProjectionAddReverse(cur_tgt, parameters);
+        if (sq % 1000 == 0) {
+            std::cout << "\r" << (100.0 * sq) / u32_nd_sq_ << "% of projection search bipartite by base completed."
+                      << std::flush;
+        }
+    }
+
+    std::cout << std::endl;
+#pragma omp parallel for schedule(static, 100)
+    for (uint32_t i = 0; i < vis_order.size(); ++i) {
+        uint32_t node = vis_order[i];
+        ProjectionAddReverse(node, parameters);
+    }
+
+
+#pragma omp parallel for schedule(static, 2048)
+    for (uint32_t i = 0; i < vis_order.size(); ++i) {
+        size_t node = (size_t)vis_order[i];
+        if (projection_graph_[node].size() > M_pjbp) {
+            std::vector<Neighbor> full_retset;
+            tsl::robin_set<uint32_t> visited;
+            for (size_t j = 0; j < projection_graph_[node].size(); ++j) {
+                if (visited.find(projection_graph_[node][j]) != visited.end()) {
+                    continue;
+                }
+                float distance = distance_->compare(data_bp_ + dimension_ * (size_t)projection_graph_[node][j],
+                                                    data_bp_ + dimension_ * (size_t)node, dimension_);
+                visited.insert(projection_graph_[node][j]);
+                full_retset.push_back(Neighbor(projection_graph_[node][j], distance, false));
+            }
+            for (unsigned j = 0; j < full_retset.size(); j++) {
+                if (full_retset[j].id == (unsigned)node) {
+                    full_retset.erase(full_retset.begin() + j);
+                    j--;
+                }
+            }
+            std::vector<uint32_t> prune_list;
+            PruneBiSearchBaseGetBase(full_retset, data_bp_ + dimension_ * (size_t)node, node, parameters, prune_list);
+            {
+                LockGuard guard(locks_[node]);
+                projection_graph_[node].clear();
+                projection_graph_[node] = prune_list;
+            }
+        }
+    }
+
+    std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+
+    // save t2 - t1 in seconds in projection time
+    auto projection_time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count();
+
+    std::atomic<uint32_t> degree_cnt(0);
+    std::atomic<uint32_t> zero_cnt(0);
+#pragma omp parallel for schedule(static, 100)
+    for (uint32_t i = 0; i < vis_order.size(); ++i) {
+        uint32_t node = vis_order[i];
+        if (projection_graph_[node].size() < M_pjbp) {
+            // std::cout << "Warning: projection graph node " << node << " has less than M_pjbp neighbors." << std::endl;
+            degree_cnt.fetch_add(1);
+            if (projection_graph_[node].size() == 0) {
+                zero_cnt.fetch_add(1);
+            }
+        }
+    }
+    std::cout << "Projection time: " << projection_time << std::endl;
+    std::cout << "Warning: " << degree_cnt.load() << " nodes have less than M_pjbp neighbors." << std::endl;
+    std::cout << "Warning: " << zero_cnt.load() << " nodes have no neighbors." << std::endl;
+
+    // stats projection graph degree
+    float avg_degree = 0;
+    uint64_t total_degree = 0;
+    uint32_t max_degree = 0;
+    uint32_t min_degree = std::numeric_limits<uint32_t>::max();
+    for (uint32_t i = 0; i < u32_nd_; ++i) {
+        if (projection_graph_[i].size() > max_degree) {
+            max_degree = projection_graph_[i].size();
+        }
+        if (projection_graph_[i].size() < min_degree) {
+            min_degree = projection_graph_[i].size();
+        }
+        avg_degree += static_cast<float>(projection_graph_[i].size());
+        total_degree += projection_graph_[i].size();
+    }
+    std::cout << "total degree: " << total_degree << std::endl;
+    avg_degree /= (float)u32_nd_;
+    std::cout << "After projection, average degree of projection graph: " << avg_degree << std::endl;
+    std::cout << "After projection, max degree of projection graph: " << max_degree << std::endl;
+    std::cout << "After projection, min degree of projection graph: " << min_degree << std::endl;
+
+    std::cout << std::endl;
+
+    for (size_t i = 0; i < projection_graph_.size(); ++i) {
+        // projection_graph_[i].clear();
+        supply_nbrs_[i] = projection_graph_[i];
+        supply_nbrs_[i].reserve(M_pjbp * 2 * PROJECTION_SLACK);
+        // supply_nbrs_[i].reserve(M_pjbp * PROJECTION_SLACK);
+    }
+
+    t1 = std::chrono::high_resolution_clock::now();
+
+#pragma omp parallel for schedule(dynamic, 2048)
+    for (uint32_t i = 0; i < nd_; ++i) {
+        size_t node = vis_order[i];
+        boost::dynamic_bitset<> visited{u32_nd_, false};
+        std::vector<Neighbor> full_retset;
+        full_retset.reserve(L_pjpq);
+        NeighborPriorityQueue search_pool;
+        SearchProjectionGraphInternal(search_pool, data_bp_ + dimension_ * node, node, parameters, visited,
+                                      full_retset);
+        std::vector<uint32_t> pruned_list;
+        pruned_list.reserve(M_pjbp * PROJECTION_SLACK);
+        for (unsigned j = 0; j < full_retset.size(); j++) {
+            if (full_retset[j].id == (unsigned)node) {
+                full_retset.erase(full_retset.begin() + j);
+                j--;
+            }
+        }
+        PruneProjectionBaseSearchCandidates(full_retset, data_bp_ + dimension_ * node, node, parameters, pruned_list);
+        {
+            LockGuard guard(locks_[node]);
+
+            supply_nbrs_[node] = pruned_list;
+        }
+        SupplyAddReverse(node, parameters);
+        if (node % 1000 == 0) {
+            std::cout << "\r" << (100.0 * node) / (u32_nd_) << "% of projection graph base search completed."
+                      << std::flush;
+        }
+    }
+
+    std::cout << "finish connectivity enhancement" << std::endl;
+
+#pragma omp parallel for schedule(dynamic, 2048)
+    for (uint32_t i = 0; i < nd_; ++i) {
+        size_t node = vis_order[i];
+        if (supply_nbrs_[node].size() > M_pjbp) {
+            std::vector<Neighbor> full_retset;
+            tsl::robin_set<uint32_t> visited;
+            for (size_t j = 0; j < supply_nbrs_[node].size(); ++j) {
+                if (visited.find(supply_nbrs_[node][j]) != visited.end()) {
+                    continue;
+                }
+                float distance = distance_->compare(data_bp_ + dimension_ * supply_nbrs_[node][j],
+                                                    data_bp_ + dimension_ * node, dimension_);
+                visited.insert(supply_nbrs_[node][j]);
+                full_retset.push_back(Neighbor(supply_nbrs_[node][j], distance, false));
+            }
+            std::vector<uint32_t> prune_list;
+            PruneProjectionBaseSearchCandidates(full_retset, data_bp_ + dimension_ * node, node, parameters,
+                                                prune_list);
+            {
+                LockGuard guard(locks_[node]);
+                supply_nbrs_[node].clear();
+                supply_nbrs_[node] = prune_list;
+            }
+        }
+    }
+    std::cout << "finish connectivity enhancement degree check" << std::endl;
+
+#pragma omp parallel for schedule(dynamic, 100)
+    for (size_t i = 0; i < projection_graph_.size(); ++i) {
+        std::vector<uint32_t> ok_insert;
+        ok_insert.reserve(M_pjbp);
+        for (size_t j = 0; j < supply_nbrs_[i].size(); ++j) {
+            if (ok_insert.size() >= M_pjbp * 2) {
+                break;
+            }
+            if (std::find(projection_graph_[i].begin(), projection_graph_[i].end(), supply_nbrs_[i][j]) ==
+                projection_graph_[i].end()) {
+                ok_insert.push_back(supply_nbrs_[i][j]);
+            }
+        }
+        projection_graph_[i].insert(projection_graph_[i].end(), ok_insert.begin(), ok_insert.end());
+        // projection_graph_[i] = ok_insert;
+        // std::copy(ok_insert.begin(), ok_insert.end(), projection_graph_[i].begin() + M_pjbp);
+        // std::copy(ok_insert.begin(), ok_insert.end(), projection_graph_[i].begin() + projection_graph_[i].size());
+        // std::copy(ok_insert.begin(), ok_insert.end(), projection_graph_[i].begin());
+    }
+
+    t2 = std::chrono::high_resolution_clock::now();
+
+    // save t2 - t1 in seconds in connectivity enhancement time
+    auto connectivity_enhancement_time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count();
+
+    std::cout << "Connectivity enhancement time: " << connectivity_enhancement_time << std::endl;
+}

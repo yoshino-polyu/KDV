@@ -1233,7 +1233,7 @@ float* AllocateDeviceBandwidths(int n){ // n is number of points
     return dBandwidths;
 }
 
-void CopyToDeviceBandwidths(float* dBandwidth, const float* hBandwidths, const int n){
+void CopyToDeviceBandwidths(float* dBandwidth, const float* hBandwidths, const int n) {
 	int size = n * sizeof(float);
 	cudaError_t error;
 	error = cudaMemcpy(dBandwidth, hBandwidths, size, cudaMemcpyHostToDevice);
