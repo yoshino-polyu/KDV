@@ -145,8 +145,7 @@ void ReductionSumGPU(float* dArray, int numberOfElements);
  *
 */
 
-int main(int argc, char *argv[]){
-
+int main(int argc, char *argv[]) {
 	int NPNTS = 100;                // default # of points
 	float CELLSIZE = 1.0f;          // default cellsize
 	char* pntFn = "data/Points.csv";  // default points file
@@ -197,9 +196,8 @@ int main(int argc, char *argv[]){
 			printf("Run in mode 1:\n ./kde_cuda 1 points_file mask_file h_option skip_sequential skip_parallel denfn_seq, denfn_cuda\n");
 	        return 1;
 		}
-
 	}
-
+	
 	SamplePoints Points; // sample of point events
 	AsciiRaster Mask;    // a mask indicating the extent of study area
 	AsciiRaster DenSurf, DenSurf_CUDA; // the estimated intensity surface
@@ -505,6 +503,7 @@ int main(int argc, char *argv[]){
 
 		// invoke kernels to compute edge effect correction weights (for each point)
 		// execution config.
+		printf("dPoints.numberOfPoints = %d\n", dPoints.numberOfPoints);
 		int NBLOCK_W = (dPoints.numberOfPoints + BLOCK_SIZE - 1) / BLOCK_SIZE;
 	    int GRID_SIZE_W = (int)(sqrtf(NBLOCK_W)) + 1;
 	    dim3 dimGrid_W(GRID_SIZE_W, GRID_SIZE_W);

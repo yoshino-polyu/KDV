@@ -14,5 +14,4 @@ typedef struct {
 	float* distances; // closest distances (squared) to study area boundary (by Guiming @ 2016-09-02)
 } SamplePoints;
 
-
 #endif // _SAMPLEPOINTS_H_

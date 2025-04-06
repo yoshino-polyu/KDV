@@ -1,0 +1,14 @@
+{
+  "executable": "kde_cuda",
+  "mode": 1,
+  "points_file": "pntsSim200000.csv",
+  "mask_file": "maskSim160000.asc",
+  "bandwidth_option": 0, 
+  "skip_sequential": 1, 
+  "skip_parallel": 0, 
+  "output_sequential": "redwood_SEQ.asc",
+  "output_parallel": "redwood_GPU.asc",
+  "log_prefix": "redwood_LOG_old",
+  "executable_path": "build/bin",
+  "timestamp_format": "%m-%d-%H:%M"
+}

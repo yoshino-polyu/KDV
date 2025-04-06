@@ -1,0 +1,11 @@
+# Ignore all log files
+*.log
+
+# Ignore NVIDIA Nsight Compute report files
+*.ncu-rep
+
+# Ignore build directories
+**/build/
+
+# Ignore all files in build directories
+**/build/* 

@@ -13,7 +13,7 @@ set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # 指定 CUDA 架构 (对应 sm_86)
-set(CMAKE_CUDA_ARCHITECTURES 86)
+set(CMAKE_CUDA_ARCHITECTURES 80)
 
 # 指定 CUDA 编译器路径
 set(CMAKE_CUDA_COMPILER /usr/local/cuda/bin/nvcc)
@@ -39,8 +39,11 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Release" "Debug" "RelWithD
 
 # 覆盖 CUDA_DEVICE_VERSION 以匹配当前架构
 # 确保 ParallelUtils.cmake 中的 CUDA_DEVICE_VERSION 列表包含 "86"
-set(CUDA_DEVICE_VERSION "86" CACHE STRING "CUDA Device Version" FORCE)
-set_property(CACHE CUDA_DEVICE_VERSION PROPERTY STRINGS "10" "11" "12" "13" "20" "21" "30" "32" "35" "37" "50" "52" "86")
+set(CUDA_DEVICE_VERSION "80" CACHE STRING "CUDA Device Version" FORCE)
+set_property(CACHE CUDA_DEVICE_VERSION PROPERTY STRINGS "10" "11" "12" "13" "20" "21" "30" "32" "35" "37" "50" "52" "80" "86")
+
+# 配置CUDA编译标志选项
+option(CUDA_ENABLE_LINEINFO "Enable the -lineinfo option for nvcc (useful for cuda-memcheck / profiler)" OFF)
 
 ##########################################################
 # 添加 CUDA 可执行文件
@@ -59,18 +62,22 @@ add_executable(kde_cuda_kdtr kde_cuda_kdtr.cu KDtree.cu CUDA_KDtree.cu)
 # 设置目标属性和编译选项
 ##########################################################
 
+# 设置基本CUDA编译标志
+set(CUDA_COMPILE_FLAGS "-O3")
+if(CUDA_ENABLE_LINEINFO)
+  set(CUDA_COMPILE_FLAGS "${CUDA_COMPILE_FLAGS} -lineinfo")
+endif()
+
 # 为所有 CUDA 可执行文件设置编译标志和 CUDA 标准
 foreach(target kde_cuda_old kde_cuda kde_cuda_kdtr)
     set_target_properties(${target} PROPERTIES
         CUDA_STANDARD 20
         CUDA_STANDARD_REQUIRED ON
-        CUDA_ARCHITECTURES 86
-        COMPILE_FLAGS "-O3"
+        CUDA_ARCHITECTURES 80
+        COMPILE_FLAGS "${CUDA_COMPILE_FLAGS}"
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     )
 endforeach()
-
-
 # 如果需要，可以添加其他编译定义或链接库
 # 例如：
 # target_compile_definitions(kde_cuda PRIVATE SOME_DEFINE)
